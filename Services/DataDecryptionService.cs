@@ -25,6 +25,7 @@
 		{
 			await this.ColumnEncryptionRepository.RenameColumnsForDecryption(columns);
 			await this.ColumnEncryptionRepository.CreatePlainColumns(columns);
+			// Create temp column to mark rows as decrypted. Remove this column after encryption finishes per table.
 		}
 	}
 }

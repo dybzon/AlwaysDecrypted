@@ -13,7 +13,7 @@
 
 		public string Schema { get; set; }
 
-		public SqlDbType DataType { get; set; }
+		public string DataType { get; set; }
 
 		public string ColumnKey { get; set; }
 
