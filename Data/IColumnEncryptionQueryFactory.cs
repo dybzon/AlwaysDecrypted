@@ -24,5 +24,7 @@
 		string GetDecryptionStatusColumnCreateQuery(string schemaName, string tableName);
 
 		string GetPlainColumnsUpdateQuery(IEnumerable<EncryptedColumn> encryptedColumns, IEnumerable<PrimaryKeyColumn> primaryKey);
+
+		string GetCleanUpQuery(IEnumerable<EncryptedColumn> columns);
 	}
 }

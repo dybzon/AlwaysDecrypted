@@ -20,6 +20,7 @@
 			var columns = await this.ColumnEncryptionRepository.GetEncryptedColumns();
 			await this.PrepareColumnsForDecryption(columns);
 			await this.ColumnEncryptionRepository.DecryptColumns(columns);
+			await this.ColumnEncryptionRepository.CleanUpTables(columns);
 		}
 
 		private async Task PrepareColumnsForDecryption(IEnumerable<EncryptedColumn> columns)

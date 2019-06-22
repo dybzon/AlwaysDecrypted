@@ -10,6 +10,10 @@
 
 		Task DecryptColumns(IEnumerable<EncryptedColumn> columns);
 
+		Task CleanUpTables(IEnumerable<EncryptedColumn> columns);
+
+		Task CleanUpTable(IEnumerable<EncryptedColumn> columns);
+
 		Task RenameColumnsForDecryption(IEnumerable<EncryptedColumn> columns);
 
 		Task CreatePlainColumns(IEnumerable<EncryptedColumn> columns);

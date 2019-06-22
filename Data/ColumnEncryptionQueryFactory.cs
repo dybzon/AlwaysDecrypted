@@ -7,8 +7,6 @@
 
 	public class ColumnEncryptionQueryFactory : IColumnEncryptionQueryFactory
 	{
-		private const int BatchSize = 10000;
-
 		public string GetEncryptedColumnRenameQuery(EncryptedColumn column) 
 			=> $"EXEC sp_rename '{column.Schema}.{column.Table}.{column.Name}', '{column.Name}_Encrypted', 'COLUMN'";
 
@@ -33,9 +31,12 @@ FROM
 WHERE c.[encryption_type] IS NOT NULL
 ";
 
-		public string GetEncryptedDataSelectQuery(IEnumerable<EncryptedColumn> columns, IEnumerable<PrimaryKeyColumn> primaryKey) => $@"SELECT TOP {BatchSize} {string.Join(", ", columns.Select(c => $"{c.Name}_Encrypted"))}, {string.Join(", ", primaryKey.Select(c => c.Column))} 
+		public string GetEncryptedDataSelectQuery(IEnumerable<EncryptedColumn> columns, IEnumerable<PrimaryKeyColumn> primaryKey) 
+			=> $@"SELECT {string.Join(", ", columns.Select(c => $"{c.Name}_Encrypted"))}, {string.Join(", ", primaryKey.Select(c => c.Column))} 
 				FROM {columns.First().Schema}.{columns.First().Table}
-				WHERE IsDataDecrypted IS NULL";
+				ORDER BY {string.Join(", ", primaryKey.Select(c => c.Column))}
+					OFFSET (@BatchNumber-1)*@BatchSize ROWS
+					FETCH NEXT @BatchSize ROWS ONLY";
 			
 
 		/// We'll use default collation on plain columns for now
@@ -55,12 +56,25 @@ WHERE i.is_primary_key = 1
 	AND SCHEMA_NAME(o.schema_id) = @Schema
 	AND OBJECT_NAME(i.object_id) = @Table";
 
+		public string GetDecryptionStatusColumnCreateQuery(string schemaName, string tableName)
+		{
+			return $"ALTER TABLE {schemaName}.{tableName} ADD IsDataDecrypted BIT NULL";
+		}
+
+		public string GetPlainColumnsUpdateQuery(IEnumerable<EncryptedColumn> encryptedColumns, IEnumerable<PrimaryKeyColumn> primaryKey) 
+			=> $@"UPDATE {encryptedColumns.First().Schema}.{encryptedColumns.First().Table} 
+				SET IsDataDecrypted = 1, {string.Join(", ", encryptedColumns.Select(c => $"{c.Name} = @{c.Name}"))} 
+				WHERE {string.Join(" AND ", primaryKey.Select(c => $"{c.Column} = @{c.Column}"))}";
+
+		public string GetCleanUpQuery(IEnumerable<EncryptedColumn> columns)
+			=> $"ALTER TABLE {columns.First().Schema}.{columns.First().Table} DROP COLUMN IsDataDecrypted, {string.Join(", ", columns.Select(c => $"{c.Name}_Encrypted"))}";
+
 		private string GetColumnTypeExpression(EncryptedColumn column)
 		{
 			// Return type and (precision, scale, max) depending on data type
-			if(this.DataTypesInfo.TryGetValue(column.DataType, out var dataTypeInfo))
+			if (this.DataTypesInfo.TryGetValue(column.DataType, out var dataTypeInfo))
 			{
-				if(!dataTypeInfo.UsesLength && !dataTypeInfo.UsesPrecision && !dataTypeInfo.UsesScale)
+				if (!dataTypeInfo.UsesLength && !dataTypeInfo.UsesPrecision && !dataTypeInfo.UsesScale)
 				{
 					// If neither length, precision, or scale needs to be specified, then simply return the data type name
 					return column.DataType;
@@ -75,16 +89,6 @@ WHERE i.is_primary_key = 1
 
 			throw new InvalidOperationException($"Decryption of columns of type {column.DataType} is not supported");
 		}
-
-		public string GetDecryptionStatusColumnCreateQuery(string schemaName, string tableName)
-		{
-			return $"ALTER TABLE {schemaName}.{tableName} ADD IsDataDecrypted BIT NULL";
-		}
-
-		public string GetPlainColumnsUpdateQuery(IEnumerable<EncryptedColumn> encryptedColumns, IEnumerable<PrimaryKeyColumn> primaryKey) 
-			=> $@"UPDATE {encryptedColumns.First().Schema}.{encryptedColumns.First().Table} 
-				SET IsDataDecrypted = 1, {string.Join(", ", encryptedColumns.Select(c => $"{c.Name} = @{c.Name}"))} 
-				WHERE {string.Join(" AND ", primaryKey.Select(c => $"{c.Column} = @{c.Column}"))}";
 
 		/// <summary>
 		/// Column encrypted is not supported for xml, timestamp/rowversion, image, ntext, text, sql_variant, 
