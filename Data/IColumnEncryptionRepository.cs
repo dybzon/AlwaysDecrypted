@@ -2,7 +2,6 @@
 {
 	using AlwaysDecrypted.Models;
 	using System.Collections.Generic;
-    using System.Data;
     using System.Threading.Tasks;
 
     public interface IColumnEncryptionRepository
@@ -14,5 +13,9 @@
 		Task RenameColumnsForDecryption(IEnumerable<EncryptedColumn> columns);
 
 		Task CreatePlainColumns(IEnumerable<EncryptedColumn> columns);
+
+		Task CreateDecryptionStatusColumn(string schemaName, string tableName);
+
+		Task CreateDecryptionStatusColumns(IEnumerable<(string, string)> tables);
 	}
 }

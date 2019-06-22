@@ -1,7 +1,8 @@
 ﻿namespace AlwaysDecrypted.Setup
 {
 	using AlwaysDecrypted.Data;
-	using Autofac;
+    using AlwaysDecrypted.Services;
+    using Autofac;
 
 	public class DependencyBuilder
 	{
@@ -12,6 +13,7 @@
 			builder.RegisterType<ConnectionStringBuilder>().AsImplementedInterfaces();
 			builder.RegisterType<ConnectionFactory>().AsImplementedInterfaces();
 			builder.RegisterType<ColumnEncryptionQueryFactory>().AsImplementedInterfaces();
+			builder.RegisterType<DataDecryptionService>().AsImplementedInterfaces();
 			return builder.Build();
 		}
 	}

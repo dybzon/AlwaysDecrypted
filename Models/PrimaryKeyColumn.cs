@@ -2,8 +2,8 @@
 {
 	public class PrimaryKeyColumn
 	{
-		string Schema { get; set; }
-		string Table { get; set; }
-		string Column { get; set; }
+		public string Schema { get; set; }
+		public string Table { get; set; }
+		public string Column { get; set; }
 	}
 }

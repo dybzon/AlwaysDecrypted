@@ -3,6 +3,7 @@
     using AlwaysDecrypted.Data;
     using AlwaysDecrypted.Models;
     using System.Collections.Generic;
+    using System.Linq;
     using System.Threading.Tasks;
 
 	public class DataDecryptionService : IDataDecryptionService
@@ -25,7 +26,7 @@
 		{
 			await this.ColumnEncryptionRepository.RenameColumnsForDecryption(columns);
 			await this.ColumnEncryptionRepository.CreatePlainColumns(columns);
-			// Create temp column to mark rows as decrypted. Remove this column after encryption finishes per table.
+			await this.ColumnEncryptionRepository.CreateDecryptionStatusColumns(columns.GroupBy(c => c.Table).Select(t => (t.First().Schema, t.Key)));
 		}
 	}
 }

@@ -1,6 +1,7 @@
 ﻿namespace AlwaysDecrypted
 {
     using AlwaysDecrypted.Data;
+    using AlwaysDecrypted.Services;
     using AlwaysDecrypted.Setup;
     using Autofac;
     using System;
@@ -14,15 +15,11 @@
 
 			var container = DependencyBuilder.Build();
 			var scope = container.BeginLifetimeScope();
-			var columnEncryptionRepository = scope.Resolve<IColumnEncryptionRepository>();
+			var decryptionService = scope.Resolve<IDataDecryptionService>();
 
-			var columns = await columnEncryptionRepository.GetEncryptedColumns();
+			await decryptionService.DecryptColumns();
 
-
-			foreach(var column in columns)
-			{
-				Console.WriteLine($"{column.Schema}.{column.Table}.{column.Name}");
-			}
+			Console.WriteLine($"Done .. apparently...");
 		}
     }
 }
