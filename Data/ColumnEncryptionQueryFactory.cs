@@ -7,8 +7,8 @@
 
 	public class ColumnEncryptionQueryFactory : IColumnEncryptionQueryFactory
 	{
-		public string GetEncryptedColumnRenameQuery(EncryptedColumn column) 
-			=> $"EXEC sp_rename '{column.Schema}.{column.Table}.{column.Name}', '{column.Name}_Encrypted', 'COLUMN'";
+		public string GetEncryptedColumnRenameQuery(Column column) 
+			=> $"EXEC sp_rename '{column.FullColumnName}', '{column.Name}_Encrypted', 'COLUMN'";
 
 		public string GetEncryptedColumnsSelectQuery() => @"SELECT 
 	SCHEMA_NAME(t.schema_id) AS 'Schema', 
@@ -31,25 +31,31 @@ FROM
 WHERE c.[encryption_type] IS NOT NULL
 ";
 
-		public string GetEncryptedDataSelectQuery(IEnumerable<EncryptedColumn> columns, IEnumerable<PrimaryKeyColumn> primaryKey) 
-			=> $@"SELECT {string.Join(", ", columns.Select(c => $"{c.Name}_Encrypted"))}, {string.Join(", ", primaryKey.Select(c => c.Column))} 
-				FROM {columns.First().Schema}.{columns.First().Table}
-				ORDER BY {string.Join(", ", primaryKey.Select(c => c.Column))}
+		public string GetEncryptedDataSelectQuery(IEnumerable<Column> columns, IEnumerable<Column> primaryKey) 
+			=> $@"SELECT {string.Join(", ", columns.Select(c => $"{c.Name}_Encrypted"))}, {string.Join(", ", primaryKey.Select(c => c.Name))} 
+				FROM {columns.First().FullTableName}
+				ORDER BY {string.Join(", ", primaryKey.Select(c => c.Name))}
 					OFFSET (@BatchNumber-1)*@BatchSize ROWS
 					FETCH NEXT @BatchSize ROWS ONLY";
-			
 
 		/// We'll use default collation on plain columns for now
-		public string GetPlainColumnCreateQuery(EncryptedColumn column)
-			=> $"ALTER TABLE {column.Schema}.{column.Table} ADD {column.Name} {this.GetColumnTypeExpression(column)} {(column.IsNullable ? "NULL" : "NOT NULL")}";
+		public string GetPlainColumnCreateQuery(Column column)
+			=> $"ALTER TABLE {column.FullTableName} ADD {column.Name} {this.GetColumnTypeExpression(column)} {(column.IsNullable ? "NULL" : "NOT NULL")}";
 
 		public string GetSelectPrimaryKeyColumnsQuery() => @"SELECT 
 	SCHEMA_NAME(o.schema_id) AS 'Schema',
 	OBJECT_NAME(i.object_id) AS 'Table',
-	c.[name] AS 'Column'
+	c.[name] AS 'Name', 
+	ty.[name] AS DataType,
+	c.collation_name AS Collation,
+	c.max_length AS 'MaxLength',
+	c.[precision] AS 'Precision',
+	c.scale AS Scale,
+	c.is_nullable AS IsNullable
 FROM sys.indexes i 
     INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
 	INNER JOIN sys.columns c ON c.column_id = ic.column_id AND c.object_id = ic.object_id
+	INNER JOIN sys.types ty ON ty.user_type_id = c.user_type_id
     INNER JOIN sys.objects o ON i.object_id = o.object_ID
 WHERE i.is_primary_key = 1
     AND o.[type_desc] = 'USER_TABLE'
@@ -57,19 +63,34 @@ WHERE i.is_primary_key = 1
 	AND OBJECT_NAME(i.object_id) = @Table";
 
 		public string GetDecryptionStatusColumnCreateQuery(string schemaName, string tableName)
-		{
-			return $"ALTER TABLE {schemaName}.{tableName} ADD IsDataDecrypted BIT NULL";
-		}
+			=> $"ALTER TABLE {schemaName}.{tableName} ADD IsDataDecrypted BIT NULL";
 
-		public string GetPlainColumnsUpdateQuery(IEnumerable<EncryptedColumn> encryptedColumns, IEnumerable<PrimaryKeyColumn> primaryKey) 
-			=> $@"UPDATE {encryptedColumns.First().Schema}.{encryptedColumns.First().Table} 
+		public string GetPlainColumnsUpdateQuery(IEnumerable<Column> encryptedColumns, IEnumerable<Column> primaryKey) 
+			=> $@"UPDATE {encryptedColumns.First().FullTableName} 
 				SET IsDataDecrypted = 1, {string.Join(", ", encryptedColumns.Select(c => $"{c.Name} = @{c.Name}"))} 
-				WHERE {string.Join(" AND ", primaryKey.Select(c => $"{c.Column} = @{c.Column}"))}";
+				WHERE {string.Join(" AND ", primaryKey.Select(c => $"{c.Name} = @{c.Name}"))}";
 
-		public string GetCleanUpQuery(IEnumerable<EncryptedColumn> columns)
-			=> $"ALTER TABLE {columns.First().Schema}.{columns.First().Table} DROP COLUMN IsDataDecrypted, {string.Join(", ", columns.Select(c => $"{c.Name}_Encrypted"))}";
+		public string GetCleanUpQuery(IEnumerable<Column> columns)
+			=> $"ALTER TABLE {columns.First().FullTableName} DROP COLUMN IsDataDecrypted, {string.Join(", ", columns.Select(c => $"{c.Name}_Encrypted"))}";
 
-		private string GetColumnTypeExpression(EncryptedColumn column)
+		public string GetTempUpdateTableCreateQuery(IEnumerable<Column> columns)
+			=> $"CREATE TABLE {this.GetTempUpdateTableName(columns)} " +
+			$"({string.Join(", ", columns.Select(c => $"{c.Name} {this.GetColumnTypeExpression(c)}"))})";
+
+		public string GetTempUpdateTableName(IEnumerable<Column> columns, IEnumerable<Column> moreColumns)
+			=> this.GetTempUpdateTableName(columns.Concat(moreColumns));
+
+		public string GetTempUpdateTableName(IEnumerable<Column> columns)
+			=> $"#Temp_{columns.First().Schema}_{columns.First().Table}";
+
+		public string GetPlainValuesFromTempTableUpdateQuery(IEnumerable<Column> encryptedColumns, IEnumerable<Column> primaryKey)
+			=> $@"UPDATE o 
+				SET {string.Join(", ", encryptedColumns.Select(c => $"o.{c.Name} = t.{c.Name}"))} 
+				FROM {encryptedColumns.First().FullTableName} o
+					INNER JOIN {this.GetTempUpdateTableName(encryptedColumns, primaryKey)} t
+						ON {string.Join(" AND ", primaryKey.Select(c => $"o.{c.Name} = t.{c.Name}"))}";
+
+		private string GetColumnTypeExpression(Column column)
 		{
 			// Return type and (precision, scale, max) depending on data type
 			if (this.DataTypesInfo.TryGetValue(column.DataType, out var dataTypeInfo))
@@ -81,7 +102,8 @@ WHERE i.is_primary_key = 1
 				}
 
 				// Otherwise add length and/or precision and/or scale to the expression
-				var lengthExpression = dataTypeInfo.UsesLength ? (column.MaxLength < 0 && dataTypeInfo.CanLengthBeSpecifiedAsMax) ? "MAX" : column.MaxLength.ToString() : string.Empty;
+				var declaredMaxLength = column.MaxLength; // TODO: Unicode types are declared with half their actual length. Fix this here.
+				var lengthExpression = dataTypeInfo.UsesLength ? (column.MaxLength < 0 && dataTypeInfo.CanLengthBeSpecifiedAsMax) ? "MAX" : declaredMaxLength.ToString() : string.Empty;
 				var precisionExpression = dataTypeInfo.UsesPrecision ? dataTypeInfo.UsesScale ? $"{column.Precision}, " : column.Precision.ToString() : string.Empty;
 				var scaleExpression = dataTypeInfo.UsesScale ? column.Scale.ToString() : string.Empty;
 				return $"{column.DataType}({lengthExpression}{precisionExpression}{scaleExpression})";
@@ -89,6 +111,9 @@ WHERE i.is_primary_key = 1
 
 			throw new InvalidOperationException($"Decryption of columns of type {column.DataType} is not supported");
 		}
+
+		public string GetTempUpdateTableCreateQuery(IEnumerable<Column> columns, IEnumerable<Column> moreColumns)
+			=> this.GetTempUpdateTableCreateQuery(columns.Concat(moreColumns));
 
 		/// <summary>
 		/// Column encrypted is not supported for xml, timestamp/rowversion, image, ntext, text, sql_variant, 
@@ -120,10 +145,10 @@ WHERE i.is_primary_key = 1
 			{"money", new DataTypeInfo(false, false, false) },
 			{"float", new DataTypeInfo(false, false, false) }, // Precision is always either 24 (REAL) or 53 (FLOAT). Length is always either 4 (REAL) or 8 (FLOAT).
 			{"real", new DataTypeInfo(false, false, false) },
-			{ "date", new DataTypeInfo(false, false, false) },
-			{ "smalldatetime", new DataTypeInfo(false, false, false) },
+			{"date", new DataTypeInfo(false, false, false) },
+			{"smalldatetime", new DataTypeInfo(false, false, false) },
 			{"datetime", new DataTypeInfo(false, false, false) },
-			{ "cursor", new DataTypeInfo(false, false, false) },
+			{"cursor", new DataTypeInfo(false, false, false) },
 			{"rowversion", new DataTypeInfo(false, false, false) },
 			{"uniqueidentifier", new DataTypeInfo(false, false, false) },
 		};

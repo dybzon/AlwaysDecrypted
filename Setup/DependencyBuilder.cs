@@ -4,8 +4,10 @@
     using AlwaysDecrypted.Services;
     using Autofac;
 
-	public class DependencyBuilder
+	public static class DependencyBuilder
 	{
+		public static IContainer Container { get; private set; }
+
 		public static IContainer Build()
 		{
 			var builder = new ContainerBuilder();
@@ -14,7 +16,7 @@
 			builder.RegisterType<ConnectionFactory>().AsImplementedInterfaces();
 			builder.RegisterType<ColumnEncryptionQueryFactory>().AsImplementedInterfaces();
 			builder.RegisterType<DataDecryptionService>().AsImplementedInterfaces();
-			return builder.Build();
+			return Container = builder.Build();
 		}
 	}
 }

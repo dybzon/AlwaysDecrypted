@@ -2,6 +2,8 @@
 {
     using System;
     using System.Collections.Generic;
+    using System.Data;
+    using System.Data.SqlClient;
     using System.Linq;
     using System.Threading.Tasks;
 	using AlwaysDecrypted.Models;
@@ -33,17 +35,13 @@
 
 			// Decrypt data for each table with encrypted columns
 			await Task.WhenAll(tableGroups.Select(async table => await this.DecryptDataForTable(table, primaryKeyColumns.Where(c => c.Table.Equals(table.Key, StringComparison.InvariantCultureIgnoreCase)))));
-
-			//var test = tableGroups.First();
-			//await this.DecryptDataForTable(test, primaryKeyColumns.Where(c => c.Table.Equals(test.Key, StringComparison.InvariantCultureIgnoreCase)));
 		}
 
 		public async Task<IEnumerable<EncryptedColumn>> GetEncryptedColumns()
 		{
 			using (var connection = this.ConnectionFactory.GetConnection())
 			{
-				var columns = await connection.QueryAsync<EncryptedColumn>(this.QueryFactory.GetEncryptedColumnsSelectQuery());
-				return columns;
+				return await connection.QueryAsync<EncryptedColumn>(this.QueryFactory.GetEncryptedColumnsSelectQuery());
 			}
 		}
 
@@ -69,6 +67,13 @@
 			}
 		}
 
+		/// <summary>
+		/// Adds a decryption status column (IsDataDecrypted) to each of the tables containing encrypted columns.
+		/// 
+		/// This column is not currently used as part of the decryption, but may be useful 
+		/// in cases where the decryption fails half way through.
+		/// </summary>
+		/// <param name="tables">The tables containing encrypted columns.</param>
 		public async Task CreateDecryptionStatusColumns(IEnumerable<(string, string)> tables)
 		{
 			foreach (var table in tables)
@@ -104,58 +109,91 @@
 
 		private async Task DecryptDataForTable(IEnumerable<EncryptedColumn> encryptedColumns, IEnumerable<PrimaryKeyColumn> primaryKey)
 		{
-			using (var connection = this.ConnectionFactory.GetConnection())
+			using (var connection = this.ConnectionFactory.GetSqlConnection())
 			{
+				connection.Open();
 				var batchNumber = 1;
 				while (true)
 				{
-					// Fetch rows from the table one batch at a time until all records are decrypted
-					var rows = (await connection.QueryAsync(
-							this.QueryFactory.GetEncryptedDataSelectQuery(encryptedColumns, primaryKey),
-							new { BatchSize, BatchNumber = batchNumber }))
-						.Select(row => (IDictionary<string, object>)row); // The dynamic returned by Dapper is always a DapperRow, which is also a dictionary of <string, object>.
+					var command = connection.CreateCommand();
+					command.CommandText = this.QueryFactory.GetEncryptedDataSelectQuery(encryptedColumns, primaryKey);
+					command.Parameters.Add(new SqlParameter("@BatchSize", BatchSize));
+					command.Parameters.Add(new SqlParameter("@BatchNumber", batchNumber));
+					var reader = await command.ExecuteReaderAsync();
 
-					if (!rows.Any())
+					if (!reader.HasRows)
 					{
-						// Assume we're done if no records were returned.
 						break;
 					}
 
-					await this.UpdatePlainColumns(encryptedColumns, primaryKey, rows);
+					await this.DecryptBatch(encryptedColumns, primaryKey, reader);
 					batchNumber++;
 				}
 			}
 		}
 
-		private async Task UpdatePlainColumns(IEnumerable<EncryptedColumn> encryptedColumns, IEnumerable<PrimaryKeyColumn> primaryKey, IEnumerable<IDictionary<string, object>> rows)
+		/// <summary>
+		/// Update records with decrypted values from the given data reader.
+		/// </summary>
+		/// <param name="encryptedColumns"></param>
+		/// <param name="primaryKey"></param>
+		/// <param name="reader"></param>
+		private async Task DecryptBatch(IEnumerable<EncryptedColumn> encryptedColumns, IEnumerable<PrimaryKeyColumn> primaryKey, IDataReader reader)
 		{
-			var updateQuery = this.QueryFactory.GetPlainColumnsUpdateQuery(encryptedColumns, primaryKey);
-			using (var connection = this.ConnectionFactory.GetConnection())
+			using (var connection = this.ConnectionFactory.GetSqlConnection())
 			{
-				foreach(var row in rows)
+				connection.Open();
+
+				// Create a #temp table to bulk insert data into
+				await this.CreateTempUpdateTable(encryptedColumns, primaryKey, connection);
+				using (var bulkCopy = new SqlBulkCopy(connection))
 				{
-					await connection.ExecuteAsync(updateQuery, this.GetPlainColumnUpdateParameters(encryptedColumns, primaryKey, row));
+					this.AddBulkCopySettings(bulkCopy, encryptedColumns, primaryKey);
+
+					try
+					{
+						// Bulk insert data into the #temp data
+						await bulkCopy.WriteToServerAsync(reader);
+
+						// Update data from the #temp table into the table being decrypted
+						await connection.ExecuteAsync(this.QueryFactory.GetPlainValuesFromTempTableUpdateQuery(encryptedColumns, primaryKey));
+					}
+					catch (Exception ex)
+					{
+						Console.WriteLine(ex.Message);
+					}
+					finally
+					{
+						reader.Close();
+					}
 				}
 			}
 		}
 
-		private DynamicParameters GetPlainColumnUpdateParameters(IEnumerable<EncryptedColumn> encryptedColumns, IEnumerable<PrimaryKeyColumn> primaryKey, IDictionary<string, object> row)
+		private void AddBulkCopySettings(SqlBulkCopy bulkCopy, IEnumerable<Column> encryptedColumns, IEnumerable<Column> primaryKey)
 		{
-			var parameters = new DynamicParameters();
+			bulkCopy.DestinationTableName = this.QueryFactory.GetTempUpdateTableName(encryptedColumns, primaryKey);
+			bulkCopy.BatchSize = BatchSize;
+			bulkCopy.BulkCopyTimeout = 60;
+			this.AddBulkCopyColumnMappings(bulkCopy, encryptedColumns, primaryKey);
+		}
 
-			// Add parameters for update
+		private void AddBulkCopyColumnMappings(SqlBulkCopy bulkCopy, IEnumerable<Column> encryptedColumns, IEnumerable<Column> primaryKey)
+		{
 			foreach(var column in encryptedColumns)
 			{
-				parameters.Add($"@{column.Name}", row[$"{column.Name}_Encrypted"]);
+				bulkCopy.ColumnMappings.Add($"{column.Name}_Encrypted", $"{column.Name}");
 			}
 
-			// Add parameters for primary key
-			foreach(var keyColumn in primaryKey)
+			foreach (var column in primaryKey)
 			{
-				parameters.Add($"@{keyColumn.Column}", row[keyColumn.Column]);
+				bulkCopy.ColumnMappings.Add($"{column.Name}", $"{column.Name}");
 			}
+		}
 
-			return parameters;
+		private async Task CreateTempUpdateTable(IEnumerable<EncryptedColumn> encryptedColumns, IEnumerable<PrimaryKeyColumn> primaryKey, SqlConnection connection)
+		{
+			await connection.ExecuteAsync(this.QueryFactory.GetTempUpdateTableCreateQuery(encryptedColumns, primaryKey));
 		}
 		
 		/// <summary>
@@ -182,7 +220,7 @@
 			if (tablesWithoutPrimaryKey.Any())
 			{
 				var table = tablesWithoutPrimaryKey.First();
-				throw new InvalidOperationException($"The table {table.First().Schema}.{table.Key} has no primary key. Decrypting data in tables without a primary key is not currently supported.");
+				throw new InvalidOperationException($"The table {table.First().FullTableName} has no primary key. Decrypting data in tables without a primary key is not currently supported.");
 			}
 
 		}

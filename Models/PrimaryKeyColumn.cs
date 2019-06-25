@@ -1,9 +1,6 @@
 ﻿namespace AlwaysDecrypted.Models
 {
-	public class PrimaryKeyColumn
+	public class PrimaryKeyColumn : Column
 	{
-		public string Schema { get; set; }
-		public string Table { get; set; }
-		public string Column { get; set; }
 	}
 }
