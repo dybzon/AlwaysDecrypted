@@ -1,5 +1,6 @@
 ﻿namespace AlwaysDecrypted
 {
+    using AlwaysDecrypted.Logging;
     using AlwaysDecrypted.Services;
     using AlwaysDecrypted.Setup;
     using Autofac;
@@ -10,12 +11,15 @@
     {
         static async Task Main(string[] args)
         {
+			// TODO: Use arguments...
 			try
 			{
+				Logger.Log($"Execution started at {DateTime.Now}");
 				Setup();
 				await Run();
+				Logger.Log($"Execution finished at {DateTime.Now}");
 			}
-			catch(Exception e)
+			catch (Exception e)
 			{
 				Console.WriteLine(e.Message);
 			}
@@ -23,6 +27,8 @@
 
 		private static void Setup()
 		{
+			Logger.Log("Setting up dependencies");
+
 			// Build dependency container
 			DependencyBuilder.Build().BeginLifetimeScope();
 		}
@@ -31,10 +37,9 @@
 		{
 			// Get decryption service and decrypt everything
 			var decryptionService = DependencyBuilder.Container.Resolve<IDataDecryptionService>();
-
-			Console.WriteLine("Decryption has begun...");
 			await decryptionService.DecryptColumns();
-			Console.WriteLine($"Everything was decrypted...");
+
+			Logger.Log($"The database was successfully decrypted");
 		}
 	}
 }

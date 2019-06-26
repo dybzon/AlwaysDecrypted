@@ -16,6 +16,8 @@
 			builder.RegisterType<ConnectionFactory>().AsImplementedInterfaces();
 			builder.RegisterType<ColumnEncryptionQueryFactory>().AsImplementedInterfaces();
 			builder.RegisterType<DataDecryptionService>().AsImplementedInterfaces();
+			builder.RegisterType<DataTypeDeclarationBuilder>().AsImplementedInterfaces();
+			builder.RegisterType<PrimaryKeyValidationService>().AsImplementedInterfaces();
 			return Container = builder.Build();
 		}
 	}

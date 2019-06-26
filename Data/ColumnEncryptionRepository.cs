@@ -6,7 +6,8 @@
     using System.Data.SqlClient;
     using System.Linq;
     using System.Threading.Tasks;
-	using AlwaysDecrypted.Models;
+    using AlwaysDecrypted.Logging;
+    using AlwaysDecrypted.Models;
     using Dapper;
 
     public class ColumnEncryptionRepository : IColumnEncryptionRepository
@@ -14,27 +15,33 @@
 		private const int BatchSize = 10000;
 		private IConnectionFactory ConnectionFactory { get; }
 		private IColumnEncryptionQueryFactory QueryFactory { get; }
+		private IPrimaryKeyValidationService PrimaryKeyValidationService { get; }
 
-		public ColumnEncryptionRepository(IConnectionFactory connectionFactory, IColumnEncryptionQueryFactory queryFactory)
+		public ColumnEncryptionRepository(
+			IConnectionFactory connectionFactory, 
+			IColumnEncryptionQueryFactory queryFactory,
+			IPrimaryKeyValidationService primaryKeyValidationService)
 		{
 			ConnectionFactory = connectionFactory;
 			QueryFactory = queryFactory;
+			PrimaryKeyValidationService = primaryKeyValidationService;
 		}
 
 		public async Task DecryptColumns(IEnumerable<EncryptedColumn> columns)
 		{
 			// Group columns per table
-			var tableGroups = columns.GroupBy(c => c.Table);
+			var tableGroups = columns.GroupBy(c => c.FullTableName);
 
 			// Get primary key columns for all tables that contain encrypted columns
-			var primaryKeyColumns = (await Task.WhenAll(tableGroups.Select(async table => await this.GetPrimaryKeyColumns(table.First().Schema, table.Key)))).SelectMany(cols => cols);
+			var primaryKeyColumns = (await Task.WhenAll(tableGroups.Select(async table => await this.GetPrimaryKeyColumns(table.First().Schema, table.First().Table)))).SelectMany(cols => cols);
 
 			// All tables with encrypted columns must have a primary key. 
 			// Otherwise we cannot decrypt the data (at least currently - it would be possible with some further changes).
-			this.ValidatePrimaryKeyColumns(tableGroups, primaryKeyColumns);
+			this.PrimaryKeyValidationService.ValidatePrimaryKeyColumns(tableGroups, primaryKeyColumns);
 
 			// Decrypt data for each table with encrypted columns
-			await Task.WhenAll(tableGroups.Select(async table => await this.DecryptDataForTable(table, primaryKeyColumns.Where(c => c.Table.Equals(table.Key, StringComparison.InvariantCultureIgnoreCase)))));
+			await Task.WhenAll(tableGroups.Select(async table => await this.DecryptDataForTable(table, primaryKeyColumns.Where(c => c.FullTableName.Equals(table.Key, StringComparison.InvariantCultureIgnoreCase)))));
+			Logger.Log("All tables were decrypted");
 		}
 
 		public async Task<IEnumerable<EncryptedColumn>> GetEncryptedColumns()
@@ -96,7 +103,9 @@
 		/// <param name="columns">The columns to be cleaned up.</param>
 		public async Task CleanUpTables(IEnumerable<EncryptedColumn> columns)
 		{
+			Logger.Log("Cleaning up after encryption");
 			await Task.WhenAll(columns.GroupBy(c => c.Table).Select(async table => await this.CleanUpTable(table)));
+			Logger.Log("Cleanup complete");
 		}
 
 		public async Task CleanUpTable(IEnumerable<EncryptedColumn> columns)
@@ -130,6 +139,8 @@
 					batchNumber++;
 				}
 			}
+
+			Logger.Log($"Finished decrypting data for {encryptedColumns.First().FullTableName}");
 		}
 
 		/// <summary>
@@ -207,22 +218,6 @@
 			{
 				return await connection.QueryAsync<PrimaryKeyColumn>(this.QueryFactory.GetSelectPrimaryKeyColumnsQuery(), new { Schema = schemaName, Table = tableName });
 			}
-		}
-
-		/// <summary>
-		/// All tables that contain encrypted columns must also contain a primary key.
-		/// Otherwise we cannot decrypt the data from those tables.
-		/// </summary>
-		private void ValidatePrimaryKeyColumns(IEnumerable<IGrouping<string, EncryptedColumn>> tableGroups, IEnumerable<PrimaryKeyColumn> primaryKeyColumns)
-		{
-			// Throw if a table has no primary key
-			var tablesWithoutPrimaryKey = tableGroups.Where(table => !primaryKeyColumns.Any(col => col.Table.Equals(table.Key, StringComparison.InvariantCultureIgnoreCase)));
-			if (tablesWithoutPrimaryKey.Any())
-			{
-				var table = tablesWithoutPrimaryKey.First();
-				throw new InvalidOperationException($"The table {table.First().FullTableName} has no primary key. Decrypting data in tables without a primary key is not currently supported.");
-			}
-
 		}
 	}
 }
