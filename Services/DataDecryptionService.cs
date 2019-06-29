@@ -9,17 +9,19 @@
 
 	public class DataDecryptionService : IDataDecryptionService
 	{
-		public DataDecryptionService(IColumnEncryptionRepository columnEncryptionRepository)
+		public DataDecryptionService(IColumnEncryptionRepository columnEncryptionRepository, ILogger logger)
 		{
 			ColumnEncryptionRepository = columnEncryptionRepository;
+			Logger = logger;
 		}
 
 		private IColumnEncryptionRepository ColumnEncryptionRepository { get; }
+		private ILogger Logger { get; }
 
 		public async Task DecryptColumns()
 		{
 			var columns = await this.ColumnEncryptionRepository.GetEncryptedColumns();
-			Logger.Log($"Found encrypted columns in the following tables: {string.Join(", ", columns.Select(c => c.FullTableName).Distinct())}");
+			this.Logger.Log($"Found encrypted columns in the following tables: {string.Join(", ", columns.Select(c => c.FullTableName).Distinct())}", LogEventLevel.Information);
 
 			await this.PrepareColumnsForDecryption(columns);
 			await this.ColumnEncryptionRepository.DecryptColumns(columns);
@@ -31,7 +33,7 @@
 			await this.ColumnEncryptionRepository.RenameColumnsForDecryption(columns);
 			await this.ColumnEncryptionRepository.CreatePlainColumns(columns);
 			await this.ColumnEncryptionRepository.CreateDecryptionStatusColumns(columns.GroupBy(c => c.Table).Select(t => (t.First().Schema, t.Key)));
-			Logger.Log("Prepared columns for encryption");
+			this.Logger.Log("Prepared columns for decryption", LogEventLevel.Information);
 		}
 	}
 }

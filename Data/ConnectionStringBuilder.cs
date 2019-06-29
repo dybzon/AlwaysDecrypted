@@ -1,10 +1,19 @@
 ﻿namespace AlwaysDecrypted.Data
 {
+	using AlwaysDecrypted.Settings;
+
 	public class ConnectionStringBuilder : IConnectionStringBuilder
 	{
+		public ConnectionStringBuilder(ISettings settings)
+		{
+			Settings = settings;
+		}
+
+		private ISettings Settings { get; }
+
 		public string Build()
 		{
-			return "Data Source=.;Initial Catalog=BadMotherfucker2;Integrated Security=SSPI;Column Encryption Setting=enabled;";
+			return this.Settings.ConnectionString;
 		}
 	}
 }

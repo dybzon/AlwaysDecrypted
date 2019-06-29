@@ -2,6 +2,7 @@
 {
     using AlwaysDecrypted.Logging;
     using AlwaysDecrypted.Services;
+    using AlwaysDecrypted.Settings;
     using AlwaysDecrypted.Setup;
     using Autofac;
     using System;
@@ -11,35 +12,37 @@
     {
         static async Task Main(string[] args)
         {
-			// TODO: Use arguments...
 			try
 			{
-				Logger.Log($"Execution started at {DateTime.Now}");
-				Setup();
+				Setup(args);
 				await Run();
-				Logger.Log($"Execution finished at {DateTime.Now}");
 			}
 			catch (Exception e)
 			{
-				Console.WriteLine(e.Message);
+				Logger.Log(e.Message, LogEventLevel.Error);
 			}
 		}
 
-		private static void Setup()
-		{
-			Logger.Log("Setting up dependencies");
+		private static ILogger Logger { get; set; }
 
+		private static void Setup(string[] args)
+		{
 			// Build dependency container
 			DependencyBuilder.Build().BeginLifetimeScope();
+			DependencyBuilder.Container.Resolve<ISettingsBuilder>().BuildSettings(args);
+			Logger = DependencyBuilder.Container.Resolve<ILogger>();
+			Logger.Log("Setting up dependencies", LogEventLevel.Information);
 		}
 
 		private static async Task Run()
 		{
+			Logger.Log($"Execution started at {DateTime.Now}", LogEventLevel.Information);
 			// Get decryption service and decrypt everything
 			var decryptionService = DependencyBuilder.Container.Resolve<IDataDecryptionService>();
 			await decryptionService.DecryptColumns();
 
-			Logger.Log($"The database was successfully decrypted");
+			Logger.Log($"The database was successfully decrypted", LogEventLevel.Information);
+			Logger.Log($"Execution finished at {DateTime.Now}", LogEventLevel.Information);
 		}
 	}
 }

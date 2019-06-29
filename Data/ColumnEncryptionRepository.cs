@@ -16,15 +16,18 @@
 		private IConnectionFactory ConnectionFactory { get; }
 		private IColumnEncryptionQueryFactory QueryFactory { get; }
 		private IPrimaryKeyValidationService PrimaryKeyValidationService { get; }
+		private ILogger Logger { get; }
 
 		public ColumnEncryptionRepository(
 			IConnectionFactory connectionFactory, 
 			IColumnEncryptionQueryFactory queryFactory,
-			IPrimaryKeyValidationService primaryKeyValidationService)
+			IPrimaryKeyValidationService primaryKeyValidationService,
+			ILogger logger)
 		{
 			ConnectionFactory = connectionFactory;
 			QueryFactory = queryFactory;
 			PrimaryKeyValidationService = primaryKeyValidationService;
+			Logger = logger;
 		}
 
 		public async Task DecryptColumns(IEnumerable<EncryptedColumn> columns)
@@ -41,7 +44,7 @@
 
 			// Decrypt data for each table with encrypted columns
 			await Task.WhenAll(tableGroups.Select(async table => await this.DecryptDataForTable(table, primaryKeyColumns.Where(c => c.FullTableName.Equals(table.Key, StringComparison.InvariantCultureIgnoreCase)))));
-			Logger.Log("All tables were decrypted");
+			this.Logger.Log("All tables were decrypted", LogEventLevel.Information);
 		}
 
 		public async Task<IEnumerable<EncryptedColumn>> GetEncryptedColumns()
@@ -103,9 +106,9 @@
 		/// <param name="columns">The columns to be cleaned up.</param>
 		public async Task CleanUpTables(IEnumerable<EncryptedColumn> columns)
 		{
-			Logger.Log("Cleaning up after encryption");
+			this.Logger.Log("Cleaning up after decryption", LogEventLevel.Information);
 			await Task.WhenAll(columns.GroupBy(c => c.Table).Select(async table => await this.CleanUpTable(table)));
-			Logger.Log("Cleanup complete");
+			this.Logger.Log("Cleanup complete", LogEventLevel.Information);
 		}
 
 		public async Task CleanUpTable(IEnumerable<EncryptedColumn> columns)
@@ -140,7 +143,7 @@
 				}
 			}
 
-			Logger.Log($"Finished decrypting data for {encryptedColumns.First().FullTableName}");
+			this.Logger.Log($"Finished decrypting data for {encryptedColumns.First().FullTableName}", LogEventLevel.Information);
 		}
 
 		/// <summary>
@@ -171,7 +174,7 @@
 					}
 					catch (Exception ex)
 					{
-						Console.WriteLine(ex.Message);
+						this.Logger.Log(ex.Message, LogEventLevel.Error);
 					}
 					finally
 					{

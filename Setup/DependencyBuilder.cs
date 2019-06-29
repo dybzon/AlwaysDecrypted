@@ -1,8 +1,10 @@
 ﻿namespace AlwaysDecrypted.Setup
 {
 	using AlwaysDecrypted.Data;
-    using AlwaysDecrypted.Services;
-    using Autofac;
+    using AlwaysDecrypted.Logging;
+	using AlwaysDecrypted.Services;
+	using AlwaysDecrypted.Settings;
+	using Autofac;
 
 	public static class DependencyBuilder
 	{
@@ -18,6 +20,9 @@
 			builder.RegisterType<DataDecryptionService>().AsImplementedInterfaces();
 			builder.RegisterType<DataTypeDeclarationBuilder>().AsImplementedInterfaces();
 			builder.RegisterType<PrimaryKeyValidationService>().AsImplementedInterfaces();
+			builder.RegisterType<Logger>().AsImplementedInterfaces();
+			builder.RegisterType<Settings>().AsImplementedInterfaces().SingleInstance();
+			builder.RegisterType<SettingsBuilder>().AsImplementedInterfaces();
 			return Container = builder.Build();
 		}
 	}
