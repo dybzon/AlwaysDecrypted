@@ -38,7 +38,7 @@
 
 				if (arg.Key.Equals("-tables"))
 				{
-					this.Settings.TablesToDecrypt = arg.Value.Split(',');
+					this.Settings.TablesToDecrypt = arg.Value.Split(',').Select(t => t.Trim());
 					continue;
 				}
 			}
