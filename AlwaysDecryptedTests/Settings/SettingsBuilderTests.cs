@@ -6,6 +6,8 @@
 	using FluentAssertions;
     using AlwaysDecrypted.Logging;
     using System;
+    using AlwaysDecrypted.Models;
+    using System.Collections.Generic;
 
     public class SettingsBuilderTests
 	{
@@ -33,7 +35,7 @@
 			{
 				this.Add(new[] { "-server=.", "-db=yomamma" }, new Settings { Server = ".", Database = "yomamma" });
 				this.Add(new[] { "-server=localhost", "-database=yomamma", "-foo=bar", "-dinmor=john" }, new Settings { Server = "localhost", Database = "yomamma" });
-				this.Add(new[] { "-tables=Foo.Bar, lol.kek, dbo.stufu  " }, new Settings { TablesToDecrypt = new[] { "Foo.Bar", "lol.kek", "dbo.stufu" } });
+				this.Add(new[] { "-tables=Foo.Bar, lol.kek, dbo.stufu  " }, new Settings { TablesToDecrypt = new List<Table> { new Table("Foo.Bar"), new Table("lol.kek"), new Table("dbo.stufu") } });
 			}
 		}
 	}

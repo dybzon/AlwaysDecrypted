@@ -1,6 +1,7 @@
 ﻿namespace AlwaysDecrypted.Settings
 {
     using AlwaysDecrypted.Logging;
+    using AlwaysDecrypted.Models;
     using System.Collections.Generic;
     using System.Linq;
 
@@ -38,7 +39,7 @@
 
 				if (arg.Key.Equals("-tables"))
 				{
-					this.Settings.TablesToDecrypt = arg.Value.Split(',').Select(t => t.Trim());
+					this.Settings.TablesToDecrypt = arg.Value.Split(',').Select(t => new Table(t));
 					continue;
 				}
 			}

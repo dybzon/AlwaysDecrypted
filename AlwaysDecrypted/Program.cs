@@ -31,17 +31,17 @@
 			DependencyBuilder.Build().BeginLifetimeScope();
 			DependencyBuilder.Container.Resolve<ISettingsBuilder>().BuildSettings(args);
 			Logger = DependencyBuilder.Container.Resolve<ILogger>();
-			Logger.Log("Setting up dependencies", LogEventLevel.Information);
+			Logger.Log("Built dependencies", LogEventLevel.Information);
 		}
 
 		private static async Task Run()
 		{
 			Logger.Log($"Execution started at {DateTime.Now}", LogEventLevel.Information);
-			// Get decryption service and decrypt everything
+			// Get decryption service and start decryption
 			var decryptionService = DependencyBuilder.Container.Resolve<IDataDecryptionService>();
-			await decryptionService.DecryptColumns();
+			await decryptionService.Decrypt();
 
-			Logger.Log($"The database was successfully decrypted", LogEventLevel.Information);
+			Logger.Log($"Decrypted completed successfully", LogEventLevel.Information);
 			Logger.Log($"Execution finished at {DateTime.Now}", LogEventLevel.Information);
 		}
 	}

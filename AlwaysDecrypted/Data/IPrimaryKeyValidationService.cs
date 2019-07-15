@@ -2,7 +2,6 @@
 {
 	using AlwaysDecrypted.Models;
 	using System.Collections.Generic;
-	using System.Linq;
 
 	/// <summary>
 	/// A service for validating primary keys.
@@ -12,7 +11,6 @@
 	/// </summary>
 	public interface IPrimaryKeyValidationService
 	{
-		void ValidatePrimaryKeyColumns(IEnumerable<string> tables, IEnumerable<Column> primaryKeyColumns);
-		void ValidatePrimaryKeyColumns(IEnumerable<IGrouping<string, Column>> tableGroups, IEnumerable<Column> primaryKeyColumns);
+		void ValidatePrimaryKeyColumns(Table table, IEnumerable<Column> primaryKeyColumns);
 	}
 }

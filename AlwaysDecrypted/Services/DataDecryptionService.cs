@@ -3,37 +3,55 @@
     using AlwaysDecrypted.Data;
     using AlwaysDecrypted.Logging;
     using AlwaysDecrypted.Models;
+    using AlwaysDecrypted.Settings;
     using System.Collections.Generic;
     using System.Linq;
     using System.Threading.Tasks;
 
 	public class DataDecryptionService : IDataDecryptionService
 	{
-		public DataDecryptionService(IColumnEncryptionRepository columnEncryptionRepository, ILogger logger)
+		public DataDecryptionService(IColumnEncryptionRepository columnEncryptionRepository, ILogger logger, ISettings settings)
 		{
 			ColumnEncryptionRepository = columnEncryptionRepository;
 			Logger = logger;
+			Settings = settings;
 		}
 
 		private IColumnEncryptionRepository ColumnEncryptionRepository { get; }
 		private ILogger Logger { get; }
+		private ISettings Settings { get; }
 
-		public async Task DecryptColumns()
+		public async Task Decrypt()
 		{
-			var columns = await this.ColumnEncryptionRepository.GetEncryptedColumns();
-			this.Logger.Log($"Found encrypted columns in the following tables: {string.Join(", ", columns.Select(c => c.FullTableName).Distinct())}", LogEventLevel.Information);
-
-			await this.PrepareColumnsForDecryption(columns);
-			await this.ColumnEncryptionRepository.DecryptColumns(columns);
-			await this.ColumnEncryptionRepository.CleanUpTables(columns);
+			var tables = await this.GetTablesForDecryption();
+			this.Logger.Log($"Found encrypted columns in the following tables {string.Join(", ", tables.Select(t => t.FullName))}", LogEventLevel.Information);
+			await this.DecryptTables(tables);
 		}
 
-		private async Task PrepareColumnsForDecryption(IEnumerable<EncryptedColumn> columns)
+		public async Task<IEnumerable<Table>> GetTablesForDecryption()
+		{
+			return await this.ColumnEncryptionRepository.GetEncryptedTables(this.Settings.TablesToDecrypt);
+		}
+
+		public async Task DecryptTables(IEnumerable<Table> tables)
+		{
+			await Task.WhenAll(tables.Select(async t => await this.DecryptTable(t)));
+		}
+
+		private async Task DecryptTable(Table table)
+		{
+			var columns = await this.ColumnEncryptionRepository.GetEncryptedColumns(table);
+			await this.PrepareColumnsForDecryption(table, columns);
+			await this.ColumnEncryptionRepository.DecryptColumns(table, columns);
+			await this.ColumnEncryptionRepository.CleanUpTable(columns);
+		}
+
+		private async Task PrepareColumnsForDecryption(Table table, IEnumerable<EncryptedColumn> columns)
 		{
 			await this.ColumnEncryptionRepository.RenameColumnsForDecryption(columns);
 			await this.ColumnEncryptionRepository.CreatePlainColumns(columns);
-			await this.ColumnEncryptionRepository.CreateDecryptionStatusColumns(columns.GroupBy(c => c.Table).Select(t => (t.First().Schema, t.Key)));
-			this.Logger.Log("Prepared columns for decryption", LogEventLevel.Information);
+			await this.ColumnEncryptionRepository.CreateDecryptionStatusColumn(table);
+			this.Logger.Log($"Prepared columns in {table.FullName} for decryption", LogEventLevel.Information);
 		}
 	}
 }

@@ -30,21 +30,17 @@
 			Logger = logger;
 		}
 
-		public async Task DecryptColumns(IEnumerable<EncryptedColumn> columns)
+		public async Task DecryptColumns(Table table, IEnumerable<EncryptedColumn> columns)
 		{
-			// Group columns per table
-			var tableGroups = columns.GroupBy(c => c.FullTableName);
-
-			// Get primary key columns for all tables that contain encrypted columns
-			var primaryKeyColumns = (await Task.WhenAll(tableGroups.Select(async table => await this.GetPrimaryKeyColumns(table.First().Schema, table.First().Table)))).SelectMany(cols => cols);
+			// Get primary key columns
+			var primaryKeyColumns = await this.GetPrimaryKeyColumns(table);
 
 			// All tables with encrypted columns must have a primary key. 
 			// Otherwise we cannot decrypt the data (at least currently - it would be possible with some further changes).
-			this.PrimaryKeyValidationService.ValidatePrimaryKeyColumns(tableGroups, primaryKeyColumns);
+			this.PrimaryKeyValidationService.ValidatePrimaryKeyColumns(table, primaryKeyColumns);
 
-			// Decrypt data for each table with encrypted columns
-			await Task.WhenAll(tableGroups.Select(async table => await this.DecryptDataForTable(table, primaryKeyColumns.Where(c => c.FullTableName.Equals(table.Key, StringComparison.InvariantCultureIgnoreCase)))));
-			this.Logger.Log("All tables were decrypted", LogEventLevel.Information);
+			// Decrypt data the given table
+			await this.DecryptDataForTable(columns, primaryKeyColumns);
 		}
 
 		public async Task<IEnumerable<EncryptedColumn>> GetEncryptedColumns()
@@ -52,6 +48,22 @@
 			using (var connection = this.ConnectionFactory.GetConnection())
 			{
 				return await connection.QueryAsync<EncryptedColumn>(this.QueryFactory.GetEncryptedColumnsSelectQuery());
+			}
+		}
+
+		public async Task<IEnumerable<EncryptedColumn>> GetEncryptedColumns(Table table)
+		{
+			using (var connection = this.ConnectionFactory.GetConnection())
+			{
+				return await connection.QueryAsync<EncryptedColumn>(this.QueryFactory.GetEncryptedColumnsSelectQuery(), new { table.Schema, Table = table.Name });
+			}
+		}
+
+		public async Task<IEnumerable<Table>> GetEncryptedTables(IEnumerable<Table> includedTables)
+		{
+			using(var connection = this.ConnectionFactory.GetConnection())
+			{
+				return await connection.QueryAsync<Table>(this.QueryFactory.GetEncryptedTablesQuery(includedTables));
 			}
 		}
 
@@ -78,25 +90,17 @@
 		}
 
 		/// <summary>
-		/// Adds a decryption status column (IsDataDecrypted) to each of the tables containing encrypted columns.
+		/// Adds a decryption status column (IsDataDecrypted) to the table.
 		/// 
 		/// This column is not currently used as part of the decryption, but may be useful 
 		/// in cases where the decryption fails half way through.
 		/// </summary>
-		/// <param name="tables">The tables containing encrypted columns.</param>
-		public async Task CreateDecryptionStatusColumns(IEnumerable<(string, string)> tables)
-		{
-			foreach (var table in tables)
-			{
-				await this.CreateDecryptionStatusColumn(table.Item1, table.Item2);
-			}
-		}
-
-		public async Task CreateDecryptionStatusColumn(string schemaName, string tableName)
+		/// <param name="tables">The table containing encrypted columns.</param>
+		public async Task CreateDecryptionStatusColumn(Table table)
 		{
 			using (var connection = this.ConnectionFactory.GetConnection())
 			{
-				await connection.ExecuteAsync(this.QueryFactory.GetDecryptionStatusColumnCreateQuery(schemaName, tableName));
+				await connection.ExecuteAsync(this.QueryFactory.GetDecryptionStatusColumnCreateQuery(table));
 			}
 		}
 
@@ -104,19 +108,14 @@
 		/// Cleans up temporary columns used for decryption, and removes the encrypted columns that have been decrypted.
 		/// </summary>
 		/// <param name="columns">The columns to be cleaned up.</param>
-		public async Task CleanUpTables(IEnumerable<EncryptedColumn> columns)
-		{
-			this.Logger.Log("Cleaning up after decryption", LogEventLevel.Information);
-			await Task.WhenAll(columns.GroupBy(c => c.Table).Select(async table => await this.CleanUpTable(table)));
-			this.Logger.Log("Cleanup complete", LogEventLevel.Information);
-		}
-
 		public async Task CleanUpTable(IEnumerable<EncryptedColumn> columns)
 		{
 			using (var connection = this.ConnectionFactory.GetConnection())
 			{
 				await connection.ExecuteAsync(this.QueryFactory.GetCleanUpQuery(columns));
 			}
+
+			this.Logger.Log($"Cleaned up {columns.First().FullTableName} after decryption", LogEventLevel.Information);
 		}
 
 		private async Task DecryptDataForTable(IEnumerable<EncryptedColumn> encryptedColumns, IEnumerable<PrimaryKeyColumn> primaryKey)
@@ -211,15 +210,14 @@
 		}
 		
 		/// <summary>
-		/// Gets primary key columns for a given table on a given schema.
+		/// Gets primary key columns for a given table.
 		/// </summary>
-		/// <param name="schemaName">The name of the schema.</param>
-		/// <param name="tableName">The name of the table.</param>
-		private async Task<IEnumerable<PrimaryKeyColumn>> GetPrimaryKeyColumns(string schemaName, string tableName)
+		/// <param name="table">The table.</param>
+		private async Task<IEnumerable<PrimaryKeyColumn>> GetPrimaryKeyColumns(Table table)
 		{
 			using (var connection = this.ConnectionFactory.GetConnection())
 			{
-				return await connection.QueryAsync<PrimaryKeyColumn>(this.QueryFactory.GetSelectPrimaryKeyColumnsQuery(), new { Schema = schemaName, Table = tableName });
+				return await connection.QueryAsync<PrimaryKeyColumn>(this.QueryFactory.GetSelectPrimaryKeyColumnsQuery(), new { Schema = table.Schema, Table = table.Name });
 			}
 		}
 	}

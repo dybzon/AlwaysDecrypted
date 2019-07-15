@@ -9,6 +9,8 @@
 
 		string GetEncryptedColumnRenameQuery(Column column);
 
+		string GetEncryptedTablesQuery(IEnumerable<Table> includedTables);
+
 		string GetPlainColumnCreateQuery(Column column);
 
 		/// <summary>
@@ -21,7 +23,7 @@
 
 		string GetSelectPrimaryKeyColumnsQuery();
 
-		string GetDecryptionStatusColumnCreateQuery(string schemaName, string tableName);
+		string GetDecryptionStatusColumnCreateQuery(Table table);
 
 		string GetPlainColumnsUpdateQuery(IEnumerable<Column> encryptedColumns, IEnumerable<Column> primaryKey);
 

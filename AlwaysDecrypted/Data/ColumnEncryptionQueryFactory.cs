@@ -16,6 +16,17 @@
 		public string GetEncryptedColumnRenameQuery(Column column) 
 			=> $"EXEC sp_rename '{column.FullColumnName}', '{column.Name}_Encrypted', 'COLUMN'";
 
+		public string GetEncryptedTablesQuery(IEnumerable<Table> includedTables) => $@"SELECT 
+	SCHEMA_NAME(t.schema_id) AS 'Schema', 
+	OBJECT_NAME(t.object_id) AS 'Name'
+FROM
+	sys.tables t
+	INNER JOIN sys.columns c on c.object_id = t.object_id
+    INNER JOIN sys.column_encryption_keys k ON c.column_encryption_key_id = k.column_encryption_key_id
+WHERE c.[encryption_type] IS NOT NULL
+	AND SCHEMA_NAME(t.schema_id) + '.' + OBJECT_NAME(t.object_id) IN ({string.Join(" UNION ", includedTables.Select(t => $"SELECT '{t.Schema}.{t.Name}'"))})
+GROUP BY t.schema_id, t.object_id";
+
 		public string GetEncryptedColumnsSelectQuery() => @"SELECT 
 	SCHEMA_NAME(t.schema_id) AS 'Schema', 
 	OBJECT_NAME(t.object_id) AS 'Table', 
@@ -34,7 +45,7 @@ FROM
 	INNER JOIN sys.columns c on c.object_id = t.object_id
 	INNER JOIN sys.types ty ON ty.user_type_id = c.user_type_id
     INNER JOIN sys.column_encryption_keys k ON c.column_encryption_key_id = k.column_encryption_key_id
-WHERE c.[encryption_type] IS NOT NULL
+WHERE c.[encryption_type] IS NOT NULL AND SCHEMA_NAME(t.schema_id) = @Schema AND OBJECT_NAME(t.object_id) = @Table
 ";
 
 		public string GetEncryptedDataSelectQuery(IEnumerable<Column> columns, IEnumerable<Column> primaryKey) 
@@ -46,7 +57,7 @@ WHERE c.[encryption_type] IS NOT NULL
 
 		/// We'll use default collation on plain columns for now
 		public string GetPlainColumnCreateQuery(Column column)
-			=> $"ALTER TABLE {column.FullTableName} ADD {column.Name} {this.DataTypeDeclarationBuilder.GetColumnTypeExpression(column)} {(column.IsNullable ? "NULL" : "NOT NULL")}";
+			=> $"ALTER TABLE {column.FullTableName} ADD {column.Name} {this.DataTypeDeclarationBuilder.GetColumnTypeExpression(column)}";
 
 		public string GetSelectPrimaryKeyColumnsQuery() => @"SELECT 
 	SCHEMA_NAME(o.schema_id) AS 'Schema',
@@ -68,8 +79,8 @@ WHERE i.is_primary_key = 1
 	AND SCHEMA_NAME(o.schema_id) = @Schema
 	AND OBJECT_NAME(i.object_id) = @Table";
 
-		public string GetDecryptionStatusColumnCreateQuery(string schemaName, string tableName)
-			=> $"ALTER TABLE {schemaName}.{tableName} ADD IsDataDecrypted BIT NULL";
+		public string GetDecryptionStatusColumnCreateQuery(Table table)
+			=> $"ALTER TABLE {table.FullName} ADD IsDataDecrypted BIT NULL";
 
 		public string GetPlainColumnsUpdateQuery(IEnumerable<Column> encryptedColumns, IEnumerable<Column> primaryKey) 
 			=> $@"UPDATE {encryptedColumns.First().FullTableName} 

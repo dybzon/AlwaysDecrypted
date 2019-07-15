@@ -8,9 +8,11 @@
 	{
 		Task<IEnumerable<EncryptedColumn>> GetEncryptedColumns();
 
-		Task DecryptColumns(IEnumerable<EncryptedColumn> columns);
+		Task<IEnumerable<EncryptedColumn>> GetEncryptedColumns(Table table);
 
-		Task CleanUpTables(IEnumerable<EncryptedColumn> columns);
+		Task<IEnumerable<Table>> GetEncryptedTables(IEnumerable<Table> includedTables);
+
+		Task DecryptColumns(Table table, IEnumerable<EncryptedColumn> columns);
 
 		Task CleanUpTable(IEnumerable<EncryptedColumn> columns);
 
@@ -18,8 +20,6 @@
 
 		Task CreatePlainColumns(IEnumerable<EncryptedColumn> columns);
 
-		Task CreateDecryptionStatusColumn(string schemaName, string tableName);
-
-		Task CreateDecryptionStatusColumns(IEnumerable<(string, string)> tables);
+		Task CreateDecryptionStatusColumn(Table table);
 	}
 }

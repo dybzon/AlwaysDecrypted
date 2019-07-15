@@ -23,7 +23,8 @@
 				var lengthExpression = dataTypeInfo.UsesLength ? (column.MaxLength < 0 && dataTypeInfo.CanLengthBeSpecifiedAsMax) ? "MAX" : declaredMaxLength.ToString() : string.Empty;
 				var precisionExpression = dataTypeInfo.UsesPrecision ? dataTypeInfo.UsesScale ? $"{column.Precision}, " : column.Precision.ToString() : string.Empty;
 				var scaleExpression = dataTypeInfo.UsesScale ? column.Scale.ToString() : string.Empty;
-				return $"{column.DataType}({lengthExpression}{precisionExpression}{scaleExpression})";
+				var nullExpression = column.IsNullable ? "NULL" : "NOT NULL";
+				return $"{column.DataType}({lengthExpression}{precisionExpression}{scaleExpression}) {nullExpression}";
 			}
 
 			throw new InvalidOperationException($"Decryption of columns of type {column.DataType} is not supported");
