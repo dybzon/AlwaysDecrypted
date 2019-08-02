@@ -43,14 +43,6 @@
 			await this.DecryptDataForTable(columns, primaryKeyColumns);
 		}
 
-		public async Task<IEnumerable<EncryptedColumn>> GetEncryptedColumns()
-		{
-			using (var connection = this.ConnectionFactory.GetConnection())
-			{
-				return await connection.QueryAsync<EncryptedColumn>(this.QueryFactory.GetEncryptedColumnsSelectQuery());
-			}
-		}
-
 		public async Task<IEnumerable<EncryptedColumn>> GetEncryptedColumns(Table table)
 		{
 			using (var connection = this.ConnectionFactory.GetConnection())

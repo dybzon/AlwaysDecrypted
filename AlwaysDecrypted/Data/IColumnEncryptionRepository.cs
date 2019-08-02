@@ -6,8 +6,6 @@
 
     public interface IColumnEncryptionRepository
 	{
-		Task<IEnumerable<EncryptedColumn>> GetEncryptedColumns();
-
 		Task<IEnumerable<EncryptedColumn>> GetEncryptedColumns(Table table);
 
 		Task<IEnumerable<Table>> GetEncryptedTables(IEnumerable<Table> includedTables);

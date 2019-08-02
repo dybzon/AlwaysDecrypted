@@ -4,6 +4,7 @@ namespace AlwaysDecryptedTests
     using AlwaysDecrypted.Logging;
     using AlwaysDecrypted.Models;
     using AlwaysDecrypted.Services;
+    using AlwaysDecrypted.Settings;
     using FakeItEasy;
     using System.Collections.Generic;
     using System.Threading.Tasks;
@@ -15,8 +16,13 @@ namespace AlwaysDecryptedTests
 		public async Task DecryptColumnsShouldCallRepository()
 		{
 			var encryptionRepository = A.Fake<IColumnEncryptionRepository>();
-			var decryptionService = new DataDecryptionService(encryptionRepository, A.Fake<ILogger>());
-			await decryptionService.DecryptColumns();
+			var settings = A.Fake<ISettings>();
+			var decryptionService = new DataDecryptionService(encryptionRepository, A.Fake<ILogger>(), settings);
+
+			A.CallTo(() => encryptionRepository.GetEncryptedTables(settings.TablesToDecrypt))
+				.Returns(new List<Table> { A.Fake<Table>() });
+
+			await decryptionService.Decrypt();
 
 			/* 
 			 * The decryption service should:
@@ -26,19 +32,19 @@ namespace AlwaysDecryptedTests
 			 * 4. Clean up afterwards to remove the encrypted data and temporary columns 
 			 */
 
-			// Get encrypted columns
-			A.CallTo(() => encryptionRepository.GetEncryptedColumns()).MustHaveHappened();
+			// Get encrypted tables
+			A.CallTo(() => encryptionRepository.GetEncryptedTables(settings.TablesToDecrypt)).MustHaveHappened();
 
 			// Prepare for decryption
 			A.CallTo(() => encryptionRepository.RenameColumnsForDecryption(A<IEnumerable<EncryptedColumn>>._)).MustHaveHappened();
 			A.CallTo(() => encryptionRepository.CreatePlainColumns(A<IEnumerable<EncryptedColumn>>._)).MustHaveHappened();
-			A.CallTo(() => encryptionRepository.CreateDecryptionStatusColumns(A<IEnumerable<(string, string)>>._)).MustHaveHappened();
+			A.CallTo(() => encryptionRepository.CreateDecryptionStatusColumn(A<Table>._)).MustHaveHappened();
 
-			// Decrypt
-			A.CallTo(() => encryptionRepository.DecryptColumns(A<IEnumerable<EncryptedColumn>>._)).MustHaveHappened();
+			// Decrypt columns
+			A.CallTo(() => encryptionRepository.DecryptColumns(A<Table>._, A<IEnumerable<EncryptedColumn>>._)).MustHaveHappened();
 
 			// Cleanup
-			A.CallTo(() => encryptionRepository.CleanUpTables(A<IEnumerable<EncryptedColumn>>._)).MustHaveHappened();
+			A.CallTo(() => encryptionRepository.CleanUpTable(A<IEnumerable<EncryptedColumn>>._)).MustHaveHappened();
 		}
 	}
 }
