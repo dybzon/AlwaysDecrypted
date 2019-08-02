@@ -4,13 +4,17 @@ Tired of working with encrypted columns in your SQL Server database? AlwaysDecry
 
 ## Usage
 
-Download and run the console application AlwaysDecrypted.exe.
+[Download the latest release](https://github.com/dybzon/AlwaysDecrypted/releases) and run the application AlwaysDecrypted.exe from the command line.
 
 Provide the name of your SQL Server and database as command line arguments like this (the server will default to localhost)
 
 `-server=myserver -database=mydatabase`
 
 The application will decrypt any data that is encrypted using _SQL Server Always Encrypted_ in the given database.
+
+You can optionally limit the tables to be decrypted by specifying a `-tables` argument like this:
+
+`-tables="dbo.foo,dbo.bar"`
 
 ## Motivation
 
